@@ -13,23 +13,23 @@ interface Student {
 }
 
 export default function App() {
-  // --- STATE MANAGEMENT ---
+  // --- 1. SECURITY & ROLE STATE ---
   const [userRole, setUserRole] = useState<'developer' | 'owner' | 'teacher' | 'none'>('none');
   const [view, setView] = useState<'students' | 'finance' | 'analytics' | 'admin'>('students');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedClass, setSelectedClass] = useState("All");
   
-  // --- SECURITY CONFIG ---
   const MASTER_PIN = "1234"; 
   const TEACHER_PIN = "5555";
-  const DEV_PIN = "0000"; // For you only
+  const DEV_PIN = "0000"; 
   const MY_PHONE = "918287282426";
   
   const [logoClicks, setLogoClicks] = useState(0);
   const [pinInput, setPinInput] = useState("");
-  const [showPinModal, setShowPinModal] = useState(true); // Start with login
-  
+  const [showPinModal, setShowPinModal] = useState(true); 
+
+  // --- 2. DATA PERSISTENCE ---
   const [expiryDate, setExpiryDate] = useState(() => {
     const saved = localStorage.getItem('grower_expiry_v1');
     if (!saved) {
@@ -59,7 +59,7 @@ export default function App() {
 
   const isExpired = new Date() > new Date(expiryDate);
 
-  // --- LOGIC FUNCTIONS ---
+  // --- 3. CORE FUNCTIONS ---
   const handleLogoClick = () => {
     setLogoClicks(prev => prev + 1);
     if (logoClicks + 1 === 3) {
@@ -81,6 +81,7 @@ export default function App() {
       setView('students');
     } else {
       alert("Incorrect PIN");
+      setPinInput("");
       return;
     }
     setShowPinModal(false);
@@ -120,7 +121,37 @@ export default function App() {
     }));
   };
 
-  // --- DATA FILTERING ---
+  const deleteStudent = (id: number) => {
+    if(window.confirm("Delete student and all their records?")) {
+      setStudents(students.filter(s => s.id !== id));
+    }
+  };
+
+  const getMonthlyHistory = () => {
+    const history: { [key: string]: number } = {};
+    const filteredForHistory = students.filter(s => selectedClass === "All" || s.className === selectedClass);
+    filteredForHistory.forEach(s => {
+      s.paidMonths.forEach((m) => { 
+        history[m] = (history[m] || 0) + s.feeAmount; 
+      });
+    });
+    return Object.entries(history).sort().reverse();
+  };
+
+  const exportToCSV = () => {
+    const headers = "Name,Phone,Class,Teacher,MonthlyFee,Paid_Months\n";
+    const rows = students.map(s => {
+      return `${s.name},${s.phone},${s.className},${s.teacherName},${s.feeAmount},"${s.paidMonths.join('; ')}"`;
+    }).join("\n");
+    const blob = new Blob([headers + rows], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('href', url);
+    a.setAttribute('download', `Grower_Report.csv`);
+    a.click();
+  };
+
+  // --- 4. DATA FILTERING ---
   const allClassNames = ["All", ...new Set(students.map(s => s.className))];
   const filteredStudents = students.filter(s => {
     const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -129,18 +160,16 @@ export default function App() {
   });
 
   const currentMonthKey = selectedDate.substring(0, 7);
-  const absentees = filteredStudents.filter(s => s.attendanceHistory[selectedDate] === 'absent');
   const monthlyRevenue = filteredStudents.filter(s => s.paidMonths.includes(currentMonthKey)).reduce((acc, s) => acc + s.feeAmount, 0);
-  const totalLifetimeRevenue = filteredStudents.reduce((acc, s) => acc + (s.paidMonths.length * s.feeAmount), 0);
 
-  // --- UI RENDER: LOCK SCREEN ---
+  // --- 5. RENDER LOGIC ---
   if (isExpired && userRole !== 'developer') {
     return (
       <div className="max-w-md mx-auto h-screen bg-slate-900 flex flex-col items-center justify-center p-10 text-center text-white">
         <Lock size={64} className="text-rose-500 mb-6" />
         <h1 onClick={handleLogoClick} className="text-3xl font-black italic tracking-tighter mb-2 cursor-pointer select-none">GROWER</h1>
-        <p className="text-slate-400 text-sm mb-8 italic">Subscription Expired. Access Locked.</p>
-        <button onClick={() => window.open(`https://wa.me/${MY_PHONE}`, '_blank')} className="w-full bg-indigo-600 py-4 rounded-2xl font-bold">Contact Developer</button>
+        <p className="text-slate-400 text-sm mb-8 italic">Subscription Expired.</p>
+        <button onClick={() => window.open(`https://wa.me/${MY_PHONE}`, '_blank')} className="w-full bg-indigo-600 py-4 rounded-2xl font-bold shadow-xl shadow-indigo-500/20">Contact Developer</button>
         {showPinModal && (
           <div className="fixed inset-0 bg-white text-slate-900 flex flex-col items-center justify-center p-6 z-[100]">
             <ShieldCheck className="text-indigo-600 mb-4" size={48} />
@@ -153,32 +182,30 @@ export default function App() {
   }
 
   return (
-    <div className="max-w-md mx-auto bg-slate-50 min-h-screen pb-32 font-sans text-slate-900 border-x border-slate-100">
+    <div className="max-w-md mx-auto bg-slate-50 min-h-screen pb-32 font-sans text-slate-900">
       
-      {/* --- LOGIN MODAL --- */}
       {showPinModal && (
-        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-6 z-[100]">
-          <div className="bg-white p-8 rounded-[2.5rem] w-full max-w-xs shadow-2xl text-center animate-in zoom-in-95 duration-200">
-            <h1 onClick={handleLogoClick} className="text-2xl font-black italic mb-6 text-slate-800">GROWER</h1>
-            <input type="password" placeholder="Enter PIN" className="w-full bg-slate-100 p-4 rounded-xl text-center text-lg font-bold outline-none mb-4 border-2 border-transparent focus:border-indigo-600 transition-all" value={pinInput} onChange={(e) => setPinInput(e.target.value)} autoFocus />
-            <button onClick={verifyPin} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold active:scale-95 transition-transform">Unlock App</button>
+        <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-xl flex items-center justify-center p-6 z-[100]">
+          <div className="bg-white p-8 rounded-[3rem] w-full max-w-xs shadow-2xl text-center border border-white/20">
+            <h1 onClick={handleLogoClick} className="text-2xl font-black italic mb-6 text-slate-800 tracking-tighter">GROWER</h1>
+            <input type="password" placeholder="Enter PIN" className="w-full bg-slate-100 p-4 rounded-2xl text-center text-lg font-bold outline-none mb-4 border-2 border-transparent focus:border-indigo-600 transition-all" value={pinInput} onChange={(e) => setPinInput(e.target.value)} autoFocus />
+            <button onClick={verifyPin} className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold active:scale-95 transition-transform shadow-lg shadow-indigo-200">Unlock App</button>
           </div>
         </div>
       )}
 
-      {/* --- HEADER (Hidden from Developer) --- */}
       {userRole !== 'developer' && (
-        <header className="bg-indigo-600 text-white p-6 rounded-b-[2.5rem] shadow-xl">
+        <header className="bg-indigo-600 text-white p-6 rounded-b-[3rem] shadow-xl">
           <div className="flex justify-between items-center mb-6">
             <h1 onClick={handleLogoClick} className="text-2xl font-black italic tracking-tighter cursor-pointer">GROWER</h1>
-            <button onClick={logout} className="p-2 bg-white/10 rounded-full hover:bg-white/20"><LogOut size={16}/></button>
+            <button onClick={logout} className="p-2 bg-white/10 rounded-full"><LogOut size={16}/></button>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/20">
-              <p className="text-[10px] font-bold uppercase text-indigo-100 mb-1">Collections</p>
+              <p className="text-[10px] font-bold uppercase text-indigo-100 mb-1">Total Fee</p>
               <p className="text-xl font-bold">₹{userRole === 'teacher' ? '---' : monthlyRevenue}</p>
             </div>
-            <div className="flex items-center justify-center bg-white/10 rounded-2xl border border-white/20 px-2">
+            <div className="flex items-center justify-center bg-white/10 rounded-2xl border border-white/20">
               <Calendar size={14} className="mr-2"/>
               <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="bg-transparent text-[10px] font-bold outline-none text-white uppercase" />
             </div>
@@ -187,41 +214,35 @@ export default function App() {
       )}
 
       <main className="p-4">
-        {/* --- DEVELOPER PRIVACY VIEW --- */}
         {userRole === 'developer' && (
           <div className="space-y-6 text-center py-10">
-            <div className="bg-indigo-100 p-8 rounded-[3rem] inline-block mb-4">
-              <EyeOff size={48} className="text-indigo-600" />
-            </div>
-            <h2 className="text-xl font-black text-slate-800">Developer Privacy Mode</h2>
-            <p className="text-sm text-slate-500 px-6">Student and financial data is hidden to protect client privacy.</p>
-            
-            <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border-2 border-indigo-600 mt-10">
-              <label className="text-[10px] font-black uppercase text-indigo-600 mb-2 block">Set License Expiry</label>
-              <input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} className="w-full bg-slate-50 p-4 rounded-2xl font-bold text-center outline-none border border-slate-100 mb-6" />
-              <button onClick={() => window.location.reload()} className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold shadow-lg">Save & Exit Mode</button>
+            <div className="bg-indigo-100 p-8 rounded-[3rem] inline-block mb-4"><EyeOff size={48} className="text-indigo-600" /></div>
+            <h2 className="text-xl font-black text-slate-800">Privacy Mode Active</h2>
+            <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border-2 border-indigo-600">
+              <label className="text-[10px] font-black uppercase text-indigo-600 mb-2 block tracking-widest">Adjust Expiry Date</label>
+              <input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} className="w-full bg-slate-50 p-4 rounded-2xl font-bold text-center border border-slate-100 mb-6" />
+              <button onClick={() => window.location.reload()} className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold">Save & Exit</button>
             </div>
           </div>
         )}
 
-        {/* --- OWNER & TEACHER VIEWS --- */}
         {userRole !== 'developer' && userRole !== 'none' && (
           <>
             {view === 'analytics' && userRole === 'owner' ? (
               <div className="space-y-6">
                 <section>
-                  <h2 className="font-bold text-slate-700 mb-3 flex items-center gap-2 text-sm px-2"><TrendingUp size={18}/> Revenue History</h2>
+                  <h2 className="font-bold text-slate-700 mb-3 flex items-center gap-2 text-sm px-2"><TrendingUp size={18}/> History</h2>
                   <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
                     {getMonthlyHistory().map(([month, amount]) => (
                       <div key={month} className="flex justify-between items-center p-4 border-b border-slate-50 last:border-0">
-                        <span className="text-xs font-bold text-slate-500 uppercase">{month}</span>
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-tighter">{month}</span>
                         <span className="text-sm font-black text-indigo-600">₹{amount as number}</span>
                       </div>
                     ))}
                   </div>
                 </section>
                 <button onClick={exportToCSV} className="w-full py-4 bg-slate-900 text-white rounded-3xl font-bold flex items-center justify-center gap-3">
-                  <Download size={20}/> Export Reports
+                  <Download size={20}/> Download CSV
                 </button>
               </div>
             ) : view === 'finance' && userRole === 'owner' ? (
@@ -232,12 +253,12 @@ export default function App() {
                     <div key={s.id} className="bg-white p-4 rounded-3xl flex justify-between items-center shadow-sm border border-slate-50">
                       <div>
                         <p className="font-bold text-sm text-slate-800">{s.name}</p>
-                        <p className="text-[9px] text-slate-400 uppercase font-black tracking-widest">Class {s.className}</p>
+                        <p className="text-[9px] text-slate-400 uppercase font-black">Batch: {s.className}</p>
                       </div>
                       <button onClick={() => {
                         const newPaid = isPaid ? s.paidMonths.filter(m => m !== currentMonthKey) : [...s.paidMonths, currentMonthKey];
                         setStudents(students.map(item => item.id === s.id ? {...item, paidMonths: newPaid} : item));
-                      }} className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest ${isPaid ? 'bg-emerald-500 text-white' : 'bg-amber-100 text-amber-600'}`}>
+                      }} className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase ${isPaid ? 'bg-emerald-500 text-white' : 'bg-amber-100 text-amber-600'}`}>
                         {isPaid ? 'Paid' : 'Unpaid'}
                       </button>
                     </div>
@@ -246,17 +267,16 @@ export default function App() {
               </div>
             ) : view === 'students' && (
               <div className="space-y-4">
-                {/* CLASS FILTERS */}
                 <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar px-1">
                   {allClassNames.map(cls => (
-                    <button key={cls} onClick={() => setSelectedClass(cls)} className={`px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${selectedClass === cls ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-100'}`}>{cls}</button>
+                    <button key={cls} onClick={() => setSelectedClass(cls)} className={`px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${selectedClass === cls ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 border border-slate-100'}`}>{cls}</button>
                   ))}
                 </div>
 
                 <div className="flex gap-2">
                   <div className="flex-1 bg-white rounded-2xl shadow-sm flex items-center px-4 py-3 border border-slate-100">
                     <Search className="text-slate-400 mr-2" size={18} />
-                    <input className="text-sm outline-none w-full bg-transparent font-medium" placeholder="Search student..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                    <input className="text-sm outline-none w-full bg-transparent font-medium" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
                   </div>
                   {userRole === 'owner' && (
                     <button onClick={() => setShowForm(!showForm)} className={`p-4 rounded-2xl shadow-lg ${showForm ? 'bg-rose-500 text-white' : 'bg-indigo-600 text-white'}`}>
@@ -266,20 +286,17 @@ export default function App() {
                 </div>
 
                 {showForm && (
-                  <div className="p-6 bg-white rounded-[2.5rem] shadow-2xl border-t-4 border-indigo-600 animate-in slide-in-from-top-4 duration-300">
-                    <h3 className="text-xs font-black uppercase tracking-widest text-indigo-600 mb-4 flex items-center gap-2"><GraduationCap size={16}/> New Registration</h3>
-                    <div className="space-y-3">
-                      <input className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border border-slate-100" placeholder="Student Name" value={newName} onChange={e => setNewName(e.target.value)} />
-                      <div className="grid grid-cols-2 gap-3">
-                        <input className="bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border border-slate-100" placeholder="Class (e.g. 10th)" value={newClass} onChange={e => setNewClass(e.target.value)} />
-                        <input className="bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border border-slate-100" placeholder="WhatsApp No." value={newPhone} onChange={e => setNewPhone(e.target.value)} />
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <input className="bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border border-slate-100" placeholder="Teacher Name" value={newTeacher} onChange={e => setNewTeacher(e.target.value)} />
-                        <input className="bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border border-slate-100" placeholder="Fee Amount" type="number" value={newFee} onChange={e => setNewFee(e.target.value)} />
-                      </div>
+                  <div className="p-6 bg-white rounded-[2.5rem] shadow-2xl border-t-4 border-indigo-600 space-y-3">
+                    <input className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border border-slate-100" placeholder="Name" value={newName} onChange={e => setNewName(e.target.value)} />
+                    <div className="grid grid-cols-2 gap-3">
+                      <input className="bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border border-slate-100" placeholder="Class" value={newClass} onChange={e => setNewClass(e.target.value)} />
+                      <input className="bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border border-slate-100" placeholder="Phone" value={newPhone} onChange={e => setNewPhone(e.target.value)} />
                     </div>
-                    <button onClick={addStudent} className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg mt-4">Register Student</button>
+                    <div className="grid grid-cols-2 gap-3">
+                      <input className="bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border border-slate-100" placeholder="Teacher" value={newTeacher} onChange={e => setNewTeacher(e.target.value)} />
+                      <input className="bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border border-slate-100" placeholder="Fee" type="number" value={newFee} onChange={e => setNewFee(e.target.value)} />
+                    </div>
+                    <button onClick={addStudent} className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg">Save Student</button>
                   </div>
                 )}
 
@@ -294,9 +311,9 @@ export default function App() {
                             <span className="text-[8px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-black uppercase tracking-tighter">Batch: {s.className} • {s.teacherName}</span>
                           </div>
                           <div className="flex gap-1.5 items-center">
-                            <button onClick={() => markAttendance(s.id, 'present')} className={`p-2.5 rounded-2xl transition-all ${status === 'present' ? 'bg-emerald-500 text-white shadow-lg' : 'bg-slate-100 text-slate-300'}`}><CheckCircle size={24} /></button>
-                            <button onClick={() => markAttendance(s.id, 'absent')} className={`p-2.5 rounded-2xl transition-all ${status === 'absent' ? 'bg-rose-500 text-white shadow-lg' : 'text-rose-300 bg-rose-50'}`}><XCircle size={24} /></button>
-                            {userRole === 'owner' && <button onClick={() => deleteStudent(s.id)} className="ml-1 text-slate-200 hover:text-rose-400"><Trash2 size={14} /></button>}
+                            <button onClick={() => markAttendance(s.id, 'present')} className={`p-2.5 rounded-2xl transition-all ${status === 'present' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-300'}`}><CheckCircle size={24} /></button>
+                            <button onClick={() => markAttendance(s.id, 'absent')} className={`p-2.5 rounded-2xl transition-all ${status === 'absent' ? 'bg-rose-500 text-white' : 'bg-slate-100 text-slate-300'}`}><XCircle size={24} /></button>
+                            {userRole === 'owner' && <button onClick={() => deleteStudent(s.id)} className="ml-1 text-slate-200"><Trash2 size={14} /></button>}
                           </div>
                         </div>
                       </div>
@@ -309,14 +326,13 @@ export default function App() {
         )}
       </main>
 
-      {/* --- NAVIGATION (Owner vs Teacher) --- */}
       {userRole !== 'developer' && userRole !== 'none' && (
-        <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[94%] max-w-md bg-white/90 backdrop-blur-xl p-2 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex justify-between border border-white/50 z-50 animate-in slide-in-from-bottom-10 duration-500">
-          <button onClick={() => setView('students')} className={`px-5 py-3 rounded-full font-black text-[10px] flex items-center gap-2 uppercase tracking-tighter transition-all ${view === 'students' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'text-slate-400'}`}><Users size={16}/> Attendance</button>
+        <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[94%] max-w-md bg-white/90 backdrop-blur-xl p-2 rounded-full shadow-2xl flex justify-between border border-white/50 z-50">
+          <button onClick={() => setView('students')} className={`px-5 py-3 rounded-full font-black text-[10px] flex items-center gap-2 uppercase tracking-tighter transition-all ${view === 'students' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}><Users size={16}/> Attendance</button>
           {userRole === 'owner' && (
             <>
-              <button onClick={() => setView('finance')} className={`px-5 py-3 rounded-full font-black text-[10px] flex items-center gap-2 uppercase tracking-tighter transition-all ${view === 'finance' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'text-slate-400'}`}><Wallet size={16}/> Payments</button>
-              <button onClick={() => setView('analytics')} className={`px-5 py-3 rounded-full font-black text-[10px] flex items-center gap-2 uppercase tracking-tighter transition-all ${view === 'analytics' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'text-slate-400'}`}><BarChart3 size={16}/> Reports</button>
+              <button onClick={() => setView('finance')} className={`px-5 py-3 rounded-full font-black text-[10px] flex items-center gap-2 uppercase tracking-tighter transition-all ${view === 'finance' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}><Wallet size={16}/> Payments</button>
+              <button onClick={() => setView('analytics')} className={`px-5 py-3 rounded-full font-black text-[10px] flex items-center gap-2 uppercase tracking-tighter transition-all ${view === 'analytics' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}><BarChart3 size={16}/> Reports</button>
             </>
           )}
         </nav>
