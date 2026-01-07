@@ -1,17 +1,15 @@
-import React, { useState, useEffect } from 'react'; // Add 'React' here
+import React, { useState, useEffect } from 'react';
 import { 
   CheckCircle, XCircle, Plus, Users, Wallet, Search, Calendar, 
   MessageSquare, BarChart3, Send, TrendingUp, Download, Trash2, 
   Lock, LogOut, IndianRupee, ArrowUpRight, EyeOff, Cloud, CloudCheck 
 } from 'lucide-react';
-
-// FIREBASE ENGINE
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps, getApp } from "firebase/app";
 import { getDatabase, ref, onValue, set } from "firebase/database";
 
-// REPLACE THESE WITH YOUR ACTUAL FIREBASE KEYS
+// --- FIREBASE CONFIG ---
 const firebaseConfig = {
-   apiKey: "AIzaSyCLxByDtWZzSPAWsFixXHnopv0p6au1aRc", 
+  apiKey: "AIzaSyCLxByDtWZzSPAWsFixXHnopv0p6au1aRc", 
    authDomain: "grower-app-e5f91.firebaseapp.com",  
    databaseURL: "https://grower-app-e5f91-default-rtdb.firebaseio.com/",  
    projectId: "grower-app-e5f91",   
@@ -21,7 +19,7 @@ const firebaseConfig = {
    measurementId: "G-VQ8HX84VTH"
 };
 
-const app = initializeApp(firebaseConfig);
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 interface Student {
@@ -32,17 +30,16 @@ interface Student {
   feeAmount: number;
   phone: string;
   paidMonths: string[];
-  attendanceHistory: { [date: string]: 'present' | 'absent' | 'none' | string };
+  attendanceHistory: { [date: string]: string };
 }
 
 export default function App() {
-  // --- STATES ---
   const [userRole, setUserRole] = useState<'developer' | 'owner' | 'teacher' | 'none'>('none');
   const [view, setView] = useState<'students' | 'finance' | 'analytics' | 'admin'>('students');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedClass, setSelectedClass] = useState("All");
-  const [students, setStudents] = useState<Student[]>([]);
+  const [students, setStudents] = useState<Student[]>([]); // Keep as Array for local logic
   const [isSyncing, setIsSyncing] = useState(true);
   
   const [newName, setNewName] = useState("");
@@ -61,7 +58,6 @@ export default function App() {
   const [pinInput, setPinInput] = useState("");
   const [showPinModal, setShowPinModal] = useState(true); 
 
-  // --- PERSISTENCE (EXPIRY) ---
   const [expiryDate, setExpiryDate] = useState(() => {
     const saved = localStorage.getItem('grower_expiry_v1');
     return saved || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
@@ -72,7 +68,16 @@ export default function App() {
     const studentRef = ref(db, 'students/');
     const unsubscribe = onValue(studentRef, (snapshot) => {
       const data = snapshot.val();
-      if (data) setStudents(data);
+      // FIX: Convert Firebase Object to Array safely
+      if (data) {
+        const armyOfStudents = Array.isArray(data) ? data : Object.values(data);
+        setStudents(armyOfStudents);
+      } else {
+        setStudents([]);
+      }
+      setIsSyncing(false);
+    }, (error) => {
+      console.error("Firebase Error:", error);
       setIsSyncing(false);
     });
     return () => unsubscribe();
@@ -122,8 +127,9 @@ export default function App() {
   const markAttendance = (id: number, status: 'present' | 'absent') => {
     const newList = students.map(s => {
       if (s.id === id) {
-        const current = s.attendanceHistory[selectedDate];
-        return { ...s, attendanceHistory: { ...s.attendanceHistory, [selectedDate]: current === status ? 'none' : status }};
+        const history = s.attendanceHistory || {};
+        const current = history[selectedDate];
+        return { ...s, attendanceHistory: { ...history, [selectedDate]: current === status ? 'none' : status }};
       }
       return s;
     });
@@ -139,23 +145,31 @@ export default function App() {
     }
   };
 
-  // --- ANALYTICS LOGIC ---
+  // --- ANALYTICS LOGIC (WITH SAFETY GUARDS) ---
   const currentMonthKey = selectedDate.substring(0, 7);
-  const filteredStudents = students.filter(s => {
+  
+  const filteredStudents = (students || []).filter(s => {
+    if (!s || !s.name) return false;
     const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesClass = selectedClass === "All" || s.className === selectedClass;
     return matchesSearch && matchesClass;
   });
 
-  const feesCollected = filteredStudents.filter(s => s.paidMonths.includes(currentMonthKey)).reduce((acc, s) => acc + s.feeAmount, 0);
-  const feesPending = filteredStudents.filter(s => !s.paidMonths.includes(currentMonthKey)).reduce((acc, s) => acc + s.feeAmount, 0);
-  const absentees = filteredStudents.filter(s => s.attendanceHistory[selectedDate] === 'absent');
+  const feesCollected = filteredStudents
+    .filter(s => (s.paidMonths || []).includes(currentMonthKey))
+    .reduce((acc, s) => acc + (s.feeAmount || 0), 0);
+
+  const feesPending = filteredStudents
+    .filter(s => !(s.paidMonths || []).includes(currentMonthKey))
+    .reduce((acc, s) => acc + (s.feeAmount || 0), 0);
+
+  const absentees = filteredStudents.filter(s => s.attendanceHistory && s.attendanceHistory[selectedDate] === 'absent');
 
   const attendanceTrend = [...Array(7)].map((_, i) => {
     const d = new Date(); d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().split('T')[0];
-    const dayStudents = students.filter(s => selectedClass === "All" || s.className === selectedClass);
-    const present = dayStudents.filter(s => s.attendanceHistory[dateStr] === 'present').length;
+    const dayStudents = (students || []).filter(s => selectedClass === "All" || s.className === selectedClass);
+    const present = dayStudents.filter(s => s.attendanceHistory && s.attendanceHistory[dateStr] === 'present').length;
     return { date: dateStr, percentage: Math.round((present / (dayStudents.length || 1)) * 100) };
   }).reverse();
 
@@ -163,7 +177,7 @@ export default function App() {
 
   const exportToCSV = () => {
     const headers = "Name,Phone,Class,Status\n";
-    const rows = students.map(s => `${s.name},${s.phone},${s.className},${s.paidMonths.includes(currentMonthKey)?'Paid':'Unpaid'}`).join("\n");
+    const rows = students.map(s => `${s.name},${s.phone},${s.className},${(s.paidMonths || []).includes(currentMonthKey)?'Paid':'Unpaid'}`).join("\n");
     const blob = new Blob([headers + rows], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = "Grower_Report.csv"; a.click();
@@ -183,7 +197,6 @@ export default function App() {
   return (
     <div className="max-w-md mx-auto bg-slate-50 min-h-screen pb-32 font-sans text-slate-900">
       
-      {/* CLOUD STATUS INDICATOR */}
       <div className="fixed top-4 right-4 z-[200]">
         {isSyncing ? <Cloud size={18} className="text-indigo-400 animate-pulse" /> : <CloudCheck size={18} className="text-emerald-500" />}
       </div>
@@ -285,7 +298,7 @@ export default function App() {
                     <div className="bg-amber-200/50 p-3 rounded-2xl text-amber-700"><ArrowUpRight size={24}/></div>
                  </div>
                  {filteredStudents.map(s => {
-                   const isPaid = s.paidMonths.includes(currentMonthKey);
+                   const isPaid = (s.paidMonths || []).includes(currentMonthKey);
                    return (
                     <div key={s.id} className="bg-white p-5 rounded-[2rem] flex justify-between items-center shadow-sm border border-slate-100">
                       <div>
@@ -293,7 +306,8 @@ export default function App() {
                         <p className="text-[9px] text-slate-400 font-black uppercase">{s.className} • ₹{s.feeAmount}</p>
                       </div>
                       <button onClick={() => {
-                        const newPaid = isPaid ? s.paidMonths.filter(m => m !== currentMonthKey) : [...s.paidMonths, currentMonthKey];
+                        const paidMonths = s.paidMonths || [];
+                        const newPaid = isPaid ? paidMonths.filter(m => m !== currentMonthKey) : [...paidMonths, currentMonthKey];
                         const newList = students.map(item => item.id === s.id ? {...item, paidMonths: newPaid} : item);
                         setStudents(newList);
                         saveToCloud(newList);
@@ -307,7 +321,7 @@ export default function App() {
             ) : view === 'students' && (
               <div className="space-y-4">
                 <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar px-1">
-                  {["All", ...Array.from(new Set(students.map(s => s.className)))].sort().map(cls => (
+                  {["All", ...Array.from(new Set((students || []).map(s => s.className)))].sort().map(cls => (
                     <button key={cls} onClick={() => setSelectedClass(cls)} className={`px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shrink-0 ${selectedClass === cls ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-white text-slate-400 border border-slate-100'}`}>{cls}</button>
                   ))}
                 </div>
@@ -341,7 +355,7 @@ export default function App() {
 
                 <div className="space-y-3">
                   {filteredStudents.map((s) => {
-                    const status = s.attendanceHistory[selectedDate] || 'none';
+                    const status = (s.attendanceHistory && s.attendanceHistory[selectedDate]) || 'none';
                     return (
                       <div key={s.id} className={`p-5 rounded-[2.5rem] border-2 transition-all duration-300 ${status === 'present' ? 'bg-emerald-50 border-emerald-400' : status === 'absent' ? 'bg-rose-50 border-rose-400' : 'bg-white border-transparent shadow-sm'}`}>
                         <div className="flex justify-between items-center">
