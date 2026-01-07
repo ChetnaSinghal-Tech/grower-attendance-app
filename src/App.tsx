@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react'; // Add 'React' here
 import { 
   CheckCircle, XCircle, Plus, Users, Wallet, Search, Calendar, 
   MessageSquare, BarChart3, Send, TrendingUp, Download, Trash2, 
@@ -11,14 +11,14 @@ import { getDatabase, ref, onValue, set } from "firebase/database";
 
 // REPLACE THESE WITH YOUR ACTUAL FIREBASE KEYS
 const firebaseConfig = {
-  apiKey: "AIzaSyCLxByDtWZzSPAWsFixXHnopv0p6au1aRc",
-  authDomain: "grower-app-e5f91.firebaseapp.com",
-  databaseURL: "https://grower-app-e5f91-default-rtdb.firebaseio.com/",
-  projectId: "grower-app-e5f91",
-  storageBucket: "grower-app-e5f91.firebasestorage.app",
-  messagingSenderId: "761383418884",
-  appId: "1:761383418884:web:1597207c92b43049a88951",
-  measurementId: "G-VQ8HX84VTH"
+   apiKey: "AIzaSyCLxByDtWZzSPAWsFixXHnopv0p6au1aRc", 
+   authDomain: "grower-app-e5f91.firebaseapp.com",  
+   databaseURL: "https://grower-app-e5f91-default-rtdb.firebaseio.com/",  
+   projectId: "grower-app-e5f91",   
+   storageBucket: "grower-app-e5f91.firebasestorage.app",   
+   messagingSenderId: "761383418884", 
+   appId: "1:761383418884:web:1597207c92b43049a88951",  
+   measurementId: "G-VQ8HX84VTH"
 };
 
 const app = initializeApp(firebaseConfig);
